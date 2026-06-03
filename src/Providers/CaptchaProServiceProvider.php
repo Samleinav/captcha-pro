@@ -24,6 +24,7 @@ use Botble\Captcha\Forms\CaptchaSettingForm;
 use Botble\CaptchaPro\Facades\Captcha as CaptchaFacade;
 use Botble\CaptchaPro\Forms\Fields\MathCaptchaField;
 use Botble\CaptchaPro\Forms\Fields\ReCaptchaField;
+use Botble\CaptchaPro\Package\PackageServiceProvider as EntomaiPackageServiceProvider;
 use Botble\CaptchaPro\Services\CaptchaManager;
 use Botble\CaptchaPro\Services\MathCaptcha;
 use Botble\CaptchaPro\Services\ProviderRegistry;
@@ -63,6 +64,9 @@ class CaptchaProServiceProvider extends ServiceProvider
             ->loadRoutes()
             ->loadAndPublishViews()
             ->loadAndPublishTranslations();
+
+        EntomaiPackageServiceProvider::loadForPlugin('captcha-pro');
+        $this->app->register(EntomaiPackageServiceProvider::class);
 
         $this->registerBaseFormSupport();
         $this->bootValidator();

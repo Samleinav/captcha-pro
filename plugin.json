@@ -1,0 +1,11 @@
+{
+    "id": "entomai/captcha-pro",
+    "name": "Captcha Pro",
+    "namespace": "Botble\\CaptchaPro\\",
+    "provider": "Botble\\CaptchaPro\\Providers\\CaptchaProServiceProvider",
+    "author": "Entomai",
+    "url": "https://entomai.com",
+    "version": "1.0.0",
+    "description": "Provider selection layer for CAPTCHA forms",
+    "minimum_core_version": "7.6.3"
+}

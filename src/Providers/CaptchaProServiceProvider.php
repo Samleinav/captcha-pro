@@ -9,9 +9,11 @@ use Botble\ACL\Http\Requests\ForgotPasswordRequest;
 use Botble\ACL\Http\Requests\LoginRequest;
 use Botble\ACL\Http\Requests\ResetPasswordRequest;
 use Botble\Base\Facades\PanelSectionManager;
+use Botble\Base\Forms\FieldOptions\CheckboxFieldOption;
 use Botble\Base\Forms\FieldOptions\RadioFieldOption;
 use Botble\Base\Forms\FieldOptions\SelectFieldOption;
 use Botble\Base\Forms\FieldOptions\TextFieldOption;
+use Botble\Base\Forms\Fields\OnOffCheckboxField;
 use Botble\Base\Forms\Fields\RadioField;
 use Botble\Base\Forms\Fields\SelectField;
 use Botble\Base\Forms\Fields\TextField;
@@ -42,6 +44,8 @@ class CaptchaProServiceProvider extends ServiceProvider
 {
     use LoadAndPublishDataTrait;
 
+    public const REGISTER_FORM_SUPPORT_HOOK = 'captcha_register_form_support';
+
     public function register(): void
     {
         $this->app->forgetInstance('captcha');
@@ -69,6 +73,10 @@ class CaptchaProServiceProvider extends ServiceProvider
         $this->app->register(EntomaiPackageServiceProvider::class);
 
         $this->registerBaseFormSupport();
+        $this->registerThirdPartyCaptchaForms();
+        $this->app->booted(function (): void {
+            $this->registerThirdPartyCaptchaForms();
+        });
         $this->bootValidator();
 
         if ($this->hasBaseCaptchaPlugin()) {
@@ -132,6 +140,9 @@ class CaptchaProServiceProvider extends ServiceProvider
 
     protected function extendCaptchaSettingForm(FormAbstract $form): void
     {
+        $this->registerThirdPartyCaptchaForms();
+        $this->addMissingBaseCaptchaFormSelectors($form);
+
         if ($form->has('captcha_pro_provider')) {
             return;
         }
@@ -289,6 +300,65 @@ class CaptchaProServiceProvider extends ServiceProvider
             );
     }
 
+    protected function addMissingBaseCaptchaFormSelectors(FormAbstract $form): void
+    {
+        $this->addMissingBaseCaptchaFormSelectorFields($form, 'enable_recaptcha', 'enable_captcha');
+        $this->addMissingBaseCaptchaFormSelectorFields($form, 'enable_math_captcha', 'enable_math_captcha');
+    }
+
+    protected function addMissingBaseCaptchaFormSelectorFields(FormAbstract $form, string $key, string $toggleField): void
+    {
+        $captcha = app('captcha');
+
+        if (
+            ! method_exists($captcha, 'getFormsSupport')
+            || ! method_exists($captcha, 'formSettingKey')
+            || ! method_exists($captcha, 'formSetting')
+        ) {
+            return;
+        }
+
+        $insertBefore = $key === 'enable_recaptcha'
+            ? 'close_fieldset_enable_captcha_1'
+            : 'close_fieldset_enable_math_captcha_1';
+
+        $currentValue = old($toggleField, match ($toggleField) {
+            'enable_captcha' => method_exists($captcha, 'reCaptchaEnabled') ? $captcha->reCaptchaEnabled() : setting($toggleField),
+            'enable_math_captcha' => method_exists($captcha, 'mathCaptchaEnabled') ? $captcha->mathCaptchaEnabled() : setting($toggleField),
+            default => setting($toggleField),
+        });
+
+        foreach ($captcha->getFormsSupport() as $captchaForm => $title) {
+            $fieldName = $captcha->formSettingKey($captchaForm, $key);
+
+            if ($form->has($fieldName)) {
+                continue;
+            }
+
+            $fieldOptions = CheckboxFieldOption::make()
+                ->label(trans('plugins/captcha::captcha.settings.enable_for_form', ['form' => $title]))
+                ->value($captcha->formSetting($captchaForm, $key))
+                ->collapsible($toggleField, '1', $currentValue);
+
+            if ($form->has($insertBefore)) {
+                $form->addBefore($insertBefore, $fieldName, OnOffCheckboxField::class, $fieldOptions);
+
+                continue;
+            }
+
+            $form->add($fieldName, OnOffCheckboxField::class, $fieldOptions);
+        }
+    }
+
+    protected function registerThirdPartyCaptchaForms(): void
+    {
+        if (! $this->app->bound('captcha') || ! function_exists('do_action')) {
+            return;
+        }
+
+        do_action(self::REGISTER_FORM_SUPPORT_HOOK, app('captcha'));
+    }
+
     protected function collapseExistingField(FormAbstract $form, string $field, string $provider, string $currentProvider): void
     {
         if (! $form->has($field)) {
@@ -321,6 +391,8 @@ class CaptchaProServiceProvider extends ServiceProvider
 
     protected function extendCaptchaSettingRules(array $rules): array
     {
+        $this->registerThirdPartyCaptchaForms();
+
         $onOffRule = new OnOffRule;
         $registry = new ProviderRegistry;
         $provider = $registry->currentProvider(request()->input('captcha_pro_provider', ProviderRegistry::PROVIDER_GOOGLE_RECAPTCHA));
@@ -349,7 +421,28 @@ class CaptchaProServiceProvider extends ServiceProvider
             'captcha_pro_cap_site_key' => ['nullable', 'string', 'max:255', Rule::requiredIf($capCaptchaProviderEnabled)],
             'captcha_pro_cap_secret' => ['nullable', 'string', 'max:255', Rule::requiredIf($capCaptchaProviderEnabled)],
             'enable_math_captcha' => $onOffRule,
+            ...$this->baseCaptchaFormSelectorRules('enable_math_captcha'),
+            ...$this->baseCaptchaFormSelectorRules('enable_recaptcha'),
         ];
+    }
+
+    protected function baseCaptchaFormSelectorRules(string $key): array
+    {
+        $rules = [];
+        $captcha = app('captcha');
+
+        if (
+            ! method_exists($captcha, 'getFormsSupport')
+            || ! method_exists($captcha, 'formSettingKey')
+        ) {
+            return $rules;
+        }
+
+        foreach (array_keys($captcha->getFormsSupport()) as $form) {
+            $rules[$captcha->formSettingKey($form, $key)] = new OnOffRule;
+        }
+
+        return $rules;
     }
 
     protected function registerStandaloneFormHooks(): void

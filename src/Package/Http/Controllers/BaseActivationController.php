@@ -275,15 +275,17 @@ abstract class BaseActivationController extends BaseController
             return redirect()->route($this->settingsRoute)->with('error_msg', $message);
         }
 
-        $this->storeUpdateState($update);
+        $formattedUpdate = $this->formatUpdatePayload($update, $client);
 
-        if ($update['has_update']) {
-            $version = $update['version'] ?? null;
+        $this->storeUpdateState($formattedUpdate);
+
+        if ($formattedUpdate['has_update']) {
+            $version = $formattedUpdate['version'] ?? null;
             $message = $version ? "An update to version {$version} is available!" : 'An update is available!';
 
             if ($this->wantsJson($request)) {
                 return $this->activationJson(true, $message, [
-                    'update' => $this->formatUpdatePayload($update, $client),
+                    'update' => $formattedUpdate,
                 ]);
             }
 
@@ -294,7 +296,7 @@ abstract class BaseActivationController extends BaseController
 
         if ($this->wantsJson($request)) {
             return $this->activationJson(true, $message, [
-                'update' => $this->formatUpdatePayload($update, $client),
+                'update' => $formattedUpdate,
             ]);
         }
 
